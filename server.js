@@ -28,23 +28,50 @@ function parseCSVLine(line) {
   return result;
 }
 
-function loadDataset() {
-  const filePath = path.join(__dirname, 'data', 'businesses_dataset.csv');
+function loadCSVFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf-8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = content.trim().split('\n');
   const headers = parseCSVLine(lines[0]);
-  return lines.slice(1).map(line => {
+  return lines.slice(1).filter(l => l.trim()).map(line => {
     const values = parseCSVLine(line);
     return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
   });
 }
 
+function loadAllDatasets() {
+  const dataDir = path.join(__dirname, 'data');
+  const csvFiles = fs.readdirSync(dataDir).filter(f => f.toLowerCase().endsWith('.csv'));
+
+  const seen = new Set();
+  const merged = [];
+
+  for (const file of csvFiles) {
+    try {
+      const records = loadCSVFile(path.join(dataDir, file));
+      let added = 0;
+      for (const record of records) {
+        const key = record.work_order_number || JSON.stringify(record);
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(record);
+          added++;
+        }
+      }
+      console.log(`Loaded ${file}: ${records.length} records (${added} new after dedup)`);
+    } catch (e) {
+      console.error(`Could not load ${file}:`, e.message);
+    }
+  }
+
+  return merged;
+}
+
 let dataset = [];
 try {
-  dataset = loadDataset();
-  console.log(`Loaded ${dataset.length} records from dataset.`);
+  dataset = loadAllDatasets();
+  console.log(`Total records in memory: ${dataset.length}`);
 } catch (e) {
-  console.error('Could not load dataset:', e.message);
+  console.error('Could not load datasets:', e.message);
 }
 
 app.get('/api/businesses', (req, res) => {
